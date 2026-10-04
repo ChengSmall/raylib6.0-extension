@@ -1,4 +1,4 @@
-/**********************************************************************************************
+﻿/**********************************************************************************************
 *
 *   raylib v6.1-dev - A simple and easy-to-use library to enjoy videogames programming (www.raylib.com)
 *
@@ -971,6 +971,9 @@ typedef bool (*SaveFileDataCallback)(const char *fileName, const void *data, int
 typedef char *(*LoadFileTextCallback)(const char *fileName);                  // FileIO: Load text data
 typedef bool (*SaveFileTextCallback)(const char *fileName, const char *text); // FileIO: Save text data
 
+// 格式化日志输出回调
+typedef void (*TraceLogFormatStringCallback)(int logLevel, const char* text);
+
 //------------------------------------------------------------------------------------
 // Global Variables Definition
 //------------------------------------------------------------------------------------
@@ -1042,6 +1045,23 @@ RLAPI bool IsCursorHidden(void);                                  // Check if cu
 RLAPI void EnableCursor(void);                                    // Enable cursor (unlock cursor)
 RLAPI void DisableCursor(void);                                   // Disable cursor (lock cursor)
 RLAPI bool IsCursorOnScreen(void);                                // Check if cursor is on the screen
+
+/**
+* 扩展 - 是否启用在 EndDrawing 函数内自动处理帧和时间事件；
+* 默认开启，如果设为false需要在循环内手动调用 GetTime WaitTime 等函数自行处理帧时间
+* 
+* @author 不一样的惩
+*/
+RLAPI void SetEndDrawingNextOnTime(bool enable);
+
+/**
+* 扩展 - 是否启用在 EndDrawing 函数内自动调用 PollInputEvents 处理输入事件；
+* 默认开启，如果设为false需要在循环内手动调用 PollInputEvents 然后再处理输入
+* 
+* @author 不一样的惩
+*/
+RLAPI void SetEndDrawingNextOnInputEvent(bool enable);
+
 
 // Drawing-related functions
 RLAPI void ClearBackground(Color color);                          // Clear background (framebuffer) to color
@@ -1118,6 +1138,11 @@ RLAPI void OpenURL(const char *url);                            // Open URL with
 RLAPI void SetTraceLogLevel(int logLevel);                      // Set the current threshold (minimum) log level
 RLAPI void TraceLog(int logLevel, const char *text, ...);       // Show trace log messages (LOG_DEBUG, LOG_INFO, LOG_WARNING, LOG_ERROR...)
 RLAPI void SetTraceLogCallback(TraceLogCallback callback);      // Set custom trace log
+
+// 格式化输出日志回调
+// 此函数会覆盖 SetTraceLogCallback 设置，是日志输出优先级最高的自定义回调
+RLAPI void SetTraceLogFormatStringCallback(TraceLogFormatStringCallback callback);
+
 
 // Memory management, using internal allocators
 RLAPI void *MemAlloc(unsigned int size);                        // Internal memory allocator

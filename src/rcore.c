@@ -1,4 +1,4 @@
-/**********************************************************************************************
+﻿/**********************************************************************************************
 *
 *   rcore - Window/display management, Graphic device/context management and input management
 *
@@ -881,6 +881,21 @@ void BeginDrawing(void)
                                         // NOTE: Not required with OpenGL 3.3+
 }
 
+
+uint8_t p_openDrawEndPollInputEvents = 1;
+uint8_t p_openDrawEndTimeEventFPS = 1;
+
+
+void SetEndDrawingNextOnTime(bool enable)
+{
+    p_openDrawEndTimeEventFPS = enable ? 1 : 0;
+}
+
+void SetEndDrawingNextOnInputEvent(bool enable) 
+{
+    p_openDrawEndPollInputEvents = enable ? 1 : 0;
+}
+
 // End canvas (framebuffer) drawing and swap buffers (double buffering)
 void EndDrawing(void)
 {
@@ -893,26 +908,33 @@ void EndDrawing(void)
 #if !SUPPORT_CUSTOM_FRAME_CONTROL
     SwapScreenBuffer();                  // Copy back buffer to front buffer (screen)
 
-    // Frame time control system
-    CORE.Time.current = GetTime();
-    CORE.Time.draw = CORE.Time.current - CORE.Time.previous;
-    CORE.Time.previous = CORE.Time.current;
-
-    CORE.Time.frame = CORE.Time.update + CORE.Time.draw;
-
-    // Wait for some milliseconds...
-    if (CORE.Time.frame < CORE.Time.target)
+    if (p_openDrawEndTimeEventFPS)
     {
-        WaitTime(CORE.Time.target - CORE.Time.frame);
 
+        // Frame time control system
         CORE.Time.current = GetTime();
-        double waitTime = CORE.Time.current - CORE.Time.previous;
+        CORE.Time.draw = CORE.Time.current - CORE.Time.previous;
         CORE.Time.previous = CORE.Time.current;
 
-        CORE.Time.frame += waitTime;    // Total frame time: update + draw + wait
+        CORE.Time.frame = CORE.Time.update + CORE.Time.draw;
+
+        // Wait for some milliseconds...
+        if (CORE.Time.frame < CORE.Time.target)
+        {
+            WaitTime(CORE.Time.target - CORE.Time.frame);
+
+            CORE.Time.current = GetTime();
+            double waitTime = CORE.Time.current - CORE.Time.previous;
+            CORE.Time.previous = CORE.Time.current;
+
+            CORE.Time.frame += waitTime;    // Total frame time: update + draw + wait
+        }
+
     }
 
-    PollInputEvents();      // Poll user events (before next frame update)
+    // Poll user events (before next frame update)
+    if (p_openDrawEndPollInputEvents) PollInputEvents();
+
 #endif
 
 #if SUPPORT_SCREEN_CAPTURE
@@ -1854,11 +1876,37 @@ void SetConfigFlags(unsigned int flags)
     FLAG_SET(CORE.Window.flags, flags);
 }
 
+TraceLogFormatStringCallback p_formatLogCallback = NULL;
+
 //----------------------------------------------------------------------------------
 // Module Functions Definition: Logging system
 //----------------------------------------------------------------------------------
 // Set the current threshold (minimum) log level
 void SetTraceLogLevel(int logType) { logTypeLevel = logType; }
+
+
+static char* f_formatTLogGetMemStr(const char* str, va_list args)
+{
+    va_list cpg;
+    va_copy(cpg, args);
+
+    char* sbuf;
+
+    int vre = vsnprintf(NULL, 0, str, cpg);
+    if (vre <= 0 || vre >= INT_MAX)
+    {
+        return NULL;
+    }
+    int slen = vre + 1;
+    sbuf = (char*)MemAlloc((unsigned int)(slen));
+
+    if (sbuf == NULL) return NULL;
+
+    vsnprintf(sbuf, slen, str, args);
+    sbuf[vre] = '\0';
+    va_end(cpg);
+    return sbuf;
+}
 
 // Show trace log messages (LOG_INFO, LOG_WARNING, LOG_ERROR, LOG_DEBUG)
 void TraceLog(int logType, const char *text, ...)
@@ -1869,6 +1917,21 @@ void TraceLog(int logType, const char *text, ...)
 
     va_list args;
     va_start(args, text);
+
+    if (p_formatLogCallback != NULL)
+    {
+        char* strp = f_formatTLogGetMemStr(text, args);
+        if (strp == NULL) {
+            p_formatLogCallback(logType, text);
+        }
+        else
+        {
+            if(p_formatLogCallback) p_formatLogCallback(logType, strp);
+            MemFree(strp);
+        }
+        va_end(args);
+        return;
+    }
 
     if (traceLog)
     {
@@ -1920,6 +1983,12 @@ void SetTraceLogCallback(TraceLogCallback callback)
 {
     traceLog = callback;
 }
+
+
+void SetTraceLogFormatStringCallback(TraceLogFormatStringCallback callback) {
+    p_formatLogCallback = callback;
+}
+
 
 //----------------------------------------------------------------------------------
 // Module Functions Definition: Memory management
