@@ -233,10 +233,10 @@
     #define SUPPORT_FILEFORMAT_BMP      1
 #endif
 #ifndef SUPPORT_FILEFORMAT_TGA
-    #define SUPPORT_FILEFORMAT_TGA      0       // Disabled by default
+    #define SUPPORT_FILEFORMAT_TGA      1       // Disabled by default
 #endif
 #ifndef SUPPORT_FILEFORMAT_JPG
-    #define SUPPORT_FILEFORMAT_JPG      0       // Disabled by default
+    #define SUPPORT_FILEFORMAT_JPG      1       // Disabled by default
 #endif
 #ifndef SUPPORT_FILEFORMAT_GIF
     #define SUPPORT_FILEFORMAT_GIF      1
@@ -245,34 +245,34 @@
     #define SUPPORT_FILEFORMAT_QOI      1
 #endif
 #ifndef SUPPORT_FILEFORMAT_PEP
-    #define SUPPORT_FILEFORMAT_PEP      0
+    #define SUPPORT_FILEFORMAT_PEP      1
 #endif
 #ifndef SUPPORT_FILEFORMAT_PSD
-    #define SUPPORT_FILEFORMAT_PSD      0       // Disabled by default
+    #define SUPPORT_FILEFORMAT_PSD      1       // Disabled by default
 #endif
 #ifndef SUPPORT_FILEFORMAT_DDS
     #define SUPPORT_FILEFORMAT_DDS      1
 #endif
 #ifndef SUPPORT_FILEFORMAT_HDR
-    #define SUPPORT_FILEFORMAT_HDR      0       // Disabled by default
+    #define SUPPORT_FILEFORMAT_HDR      1       // Disabled by default
 #endif
 #ifndef SUPPORT_FILEFORMAT_PIC
-    #define SUPPORT_FILEFORMAT_PIC      0       // Disabled by default
+    #define SUPPORT_FILEFORMAT_PIC      1       // Disabled by default
 #endif
 #ifndef SUPPORT_FILEFORMAT_PNM
-    #define SUPPORT_FILEFORMAT_PNM      0       // Disabled by default
+    #define SUPPORT_FILEFORMAT_PNM      1       // Disabled by default
 #endif
 #ifndef SUPPORT_FILEFORMAT_KTX
-    #define SUPPORT_FILEFORMAT_KTX      0       // Disabled by default
+    #define SUPPORT_FILEFORMAT_KTX      1       // Disabled by default
 #endif
 #ifndef SUPPORT_FILEFORMAT_ASTC
-    #define SUPPORT_FILEFORMAT_ASTC     0       // Disabled by default
+    #define SUPPORT_FILEFORMAT_ASTC     1       // Disabled by default
 #endif
 #ifndef SUPPORT_FILEFORMAT_PKM
-    #define SUPPORT_FILEFORMAT_PKM      0       // Disabled by default
+    #define SUPPORT_FILEFORMAT_PKM      1       // Disabled by default
 #endif
 #ifndef SUPPORT_FILEFORMAT_PVR
-    #define SUPPORT_FILEFORMAT_PVR      0       // Disabled by default
+    #define SUPPORT_FILEFORMAT_PVR      1       // Disabled by default
 #endif
 
 #ifndef SUPPORT_IMAGE_EXPORT
@@ -297,7 +297,7 @@
     #define SUPPORT_FILEFORMAT_FNT      1
 #endif
 #ifndef SUPPORT_FILEFORMAT_BDF
-    #define SUPPORT_FILEFORMAT_BDF      0       // Disabled by default
+    #define SUPPORT_FILEFORMAT_BDF      1       // Disabled by default
 #endif
 
 //------------------------------------------------------------------------------------
@@ -349,7 +349,7 @@
     #define SUPPORT_FILEFORMAT_QOA      1
 #endif
 #ifndef SUPPORT_FILEFORMAT_FLAC
-    #define SUPPORT_FILEFORMAT_FLAC     0       // Disabled by default
+    #define SUPPORT_FILEFORMAT_FLAC     1       // Disabled by default
 #endif
 #ifndef SUPPORT_FILEFORMAT_XM
     #define SUPPORT_FILEFORMAT_XM       1
