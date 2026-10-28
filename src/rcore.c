@@ -1926,7 +1926,7 @@ void TraceLog(int logType, const char *text, ...)
         }
         else
         {
-            if(p_formatLogCallback) p_formatLogCallback(logType, strp);
+            p_formatLogCallback(logType, strp);
             MemFree(strp);
         }
         va_end(args);
