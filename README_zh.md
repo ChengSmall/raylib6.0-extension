@@ -1,3 +1,13 @@
+## 基于raylib6.0的扩展
+
+这是一个基于raylib6.0的扩展仓库，添加了一些扩展功能
+
+[raylib 原仓库链接](https://github.com/raysan5/raylib)
+
+[原版README文件](README.md)
+
+## 原仓库README翻译文本
+
 <img align="left" style="width:260px" src="https://github.com/raysan5/raylib/blob/master/logo/raylib_logo_animation.gif" width="288px">
 
 **raylib 是一个简单易用的库，让你享受电子游戏编程的乐趣。**
@@ -92,9 +102,9 @@ int main(void)
 构建与安装
 ----------------------
 
-raylib 的 Windows、Linux、macOS、Android 和 HTML5 二进制发行版可在 [GitHub Releases 页面](https://github.com/raysan5/raylib/releases)获取。
+raylib 的 Windows、Linux、macOS、Android 和 HTML5 二进制发行版可在 [GitHub Releases 页面](https://github.com/raysan5/raylib/releases)获取
 
-raylib 也可通过多个操作系统发行版上的多个包管理器获取。
+raylib 也可通过多个操作系统发行版上的多个包管理器获取
 
 #### 在多个平台上安装和构建 raylib
 
