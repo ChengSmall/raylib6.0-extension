@@ -1381,6 +1381,389 @@ int GetShaderLocationAttrib(Shader shader, const char *attribName)
     return rlGetLocationAttrib(shader.id, attribName);
 }
 
+#pragma region Shader缓存机制
+
+//----------------------------------------------------------------------------------
+// Shader Binary Serialization Functions (native GPU program binaries)
+// NOTE: Serialized data is only valid on the same GPU, driver and graphics API
+//----------------------------------------------------------------------------------
+
+#define RSH_FORMAT_VERSION          1u
+#define RSH_HEADER_BASE             36u     // Header size without locations array
+#define RSH_MAGIC                   "RSH1"
+
+#if defined(__EMSCRIPTEN__) || (!defined(GRAPHICS_API_OPENGL_33) && !defined(GRAPHICS_API_OPENGL_ES2))
+#define RSH_HAS_PROGRAM_BINARY   0     // WebGL, OpenGL 1.1 and software renderer
+#else
+#define RSH_HAS_PROGRAM_BINARY   1
+#endif
+
+// FNV-1a hash over a memory block
+static uint32_t rshHashBytes(uint32_t hash, const void* data, unsigned int size)
+{
+    const unsigned char* bytes = (const unsigned char*)data;
+    unsigned int i = 0;
+
+    for (i = 0; i < size; i++)
+    {
+        hash ^= (uint32_t)bytes[i];
+        hash *= 16777619u;
+    }
+
+    return hash;
+}
+
+// Write a 32-bit value into the serialized buffer (native byte order)
+static void rshWriteU32(char* buffer, unsigned int offset, uint32_t value)
+{
+    memcpy(buffer + offset, &value, sizeof(value));
+}
+
+// Read a 32-bit value from the serialized buffer (native byte order)
+static uint32_t rshReadU32(const char* buffer, unsigned int offset)
+{
+    uint32_t value = 0;
+    memcpy(&value, buffer + offset, sizeof(value));
+    return value;
+}
+
+#if RSH_HAS_PROGRAM_BINARY
+// Check if the current graphics API exposes program binary entry points
+// 检查当前图形API是否公开程序二进制入口点
+static int rshIsProgramBinaryAvailable(void)
+{
+#if defined(GRAPHICS_API_OPENGL_ES3)
+    return 1;
+#elif defined(GRAPHICS_API_OPENGL_ES2)
+#if defined(PLATFORM_DESKTOP_GLFW) || defined(PLATFORM_DESKTOP_SDL)
+    // Desktop GLES2 uses glad_gles2 function pointers
+    return ((glGetProgramBinaryOES != NULL) && (glProgramBinaryOES != NULL));
+#else
+    // Native GLES2: the extension entry points only exist when advertised
+    {
+        const char* extensions = (const char*)glGetString(GL_EXTENSIONS);
+        return ((extensions != NULL) && (strstr(extensions, "GL_OES_get_program_binary") != NULL));
+    }
+#endif
+#else
+    // Desktop OpenGL (ARB_get_program_binary, core in OpenGL 4.1+)
+    return ((glGetProgramBinary != NULL) && (glProgramBinary != NULL));
+#endif
+}
+
+// FNV-1a hash over a null-terminated string
+static uint32_t rshHashString(uint32_t hash, const char* text)
+{
+    return rshHashBytes(hash, text, (unsigned int)strlen(text));
+}
+#endif
+
+// Compute a fingerprint of the current GPU/driver/API environment
+static uint32_t rshGetGPUId(void)
+{
+#if RSH_HAS_PROGRAM_BINARY
+    uint32_t hash = 2166136261u;    // FNV-1a offset basis
+    const char* vendor = (const char*)glGetString(GL_VENDOR);
+    const char* renderer = (const char*)glGetString(GL_RENDERER);
+    const char* version = (const char*)glGetString(GL_VERSION);
+    int apiVersion = rlGetVersion();
+
+    if ((vendor == NULL) || (renderer == NULL) || (version == NULL)) return 0;
+
+    hash = rshHashString(hash, vendor);
+    hash = rshHashString(hash, "|");
+    hash = rshHashString(hash, renderer);
+    hash = rshHashString(hash, "|");
+    hash = rshHashString(hash, version);
+    hash = rshHashString(hash, "|");
+    hash = rshHashBytes(hash, &apiVersion, (unsigned int)sizeof(apiVersion));
+
+    return (hash != 0) ? hash : 1;
+#else
+    return 0;
+#endif
+}
+
+// Get the native shader program binary length. Returns 1 on success.
+static int rshGetProgramBinaryLength(unsigned int programId, int* binarySize)
+{
+    int linked = 0;
+
+    if (binarySize == NULL) return 0;
+    *binarySize = 0;
+
+#if RSH_HAS_PROGRAM_BINARY
+    if (!rshIsProgramBinaryAvailable()) return 0;
+
+    while (glGetError() != GL_NO_ERROR) {}
+
+    glGetProgramiv(programId, GL_LINK_STATUS, &linked);
+    if ((glGetError() != GL_NO_ERROR) || (linked == 0)) return 0;
+
+#if defined(GRAPHICS_API_OPENGL_ES2) && !defined(GRAPHICS_API_OPENGL_ES3)
+    glGetProgramiv(programId, GL_PROGRAM_BINARY_LENGTH_OES, binarySize);
+#else
+    glGetProgramiv(programId, GL_PROGRAM_BINARY_LENGTH, binarySize);
+#endif
+
+    if ((glGetError() != GL_NO_ERROR) || (*binarySize <= 0)) return 0;
+    return 1;
+#else
+    (void)programId;
+    return 0;
+#endif
+}
+
+// Retrieve the native shader program binary. Returns 1 on success.
+static int rshGetProgramBinaryData(unsigned int programId, void* buffer, int bufferSize, unsigned int* binaryFormat, int* written)
+{
+    if ((buffer == NULL) || (bufferSize <= 0) || (binaryFormat == NULL) || (written == NULL)) return 0;
+
+    *binaryFormat = 0;
+    *written = 0;
+
+#if RSH_HAS_PROGRAM_BINARY
+    if (!rshIsProgramBinaryAvailable()) return 0;
+
+    while (glGetError() != GL_NO_ERROR) {}
+
+#if defined(GRAPHICS_API_OPENGL_ES2) && !defined(GRAPHICS_API_OPENGL_ES3)
+    glGetProgramBinaryOES(programId, bufferSize, written, binaryFormat, buffer);
+#else
+    glGetProgramBinary(programId, bufferSize, written, binaryFormat, buffer);
+#endif
+
+    if (glGetError() != GL_NO_ERROR) return 0;
+    if ((*written <= 0) || (*written > bufferSize) || (*binaryFormat == 0)) return 0;
+    return 1;
+#else
+    (void)programId;
+    return 0;
+#endif
+}
+
+// Create and link a shader program from a native binary. Returns program id or 0.
+// 从本机二进制文件创建并链接着色器程序。返回程序id 或0
+static unsigned int rshCreateProgramFromBinary(const void* data, int size, unsigned int binaryFormat)
+{
+    unsigned int program = 0;
+    int linked = 0;
+
+    if ((data == NULL) || (size <= 0) || (binaryFormat == 0)) return 0;
+
+#if RSH_HAS_PROGRAM_BINARY
+    if (!rshIsProgramBinaryAvailable()) return 0;
+
+    while (glGetError() != GL_NO_ERROR) {}
+
+    program = glCreateProgram();
+    if (program == 0) return 0;
+
+#if defined(GRAPHICS_API_OPENGL_ES2) && !defined(GRAPHICS_API_OPENGL_ES3)
+    glProgramBinaryOES(program, binaryFormat, data, size);
+#else
+    glProgramBinary(program, binaryFormat, data, size);
+#endif
+
+    if (glGetError() != GL_NO_ERROR)
+    {
+        glDeleteProgram(program);
+        return 0;
+    }
+
+    glGetProgramiv(program, GL_LINK_STATUS, &linked);
+    if ((glGetError() != GL_NO_ERROR) || (linked == 0))
+    {
+        glDeleteProgram(program);
+        return 0;
+    }
+
+    return program;
+#else
+    (void)data;
+    (void)size;
+    (void)binaryFormat;
+    return 0;
+#endif
+}
+
+// Delete a program created by rshCreateProgramFromBinary
+// 删除由rshCreateProgramFromBinary创建的程序
+static void rshDeleteProgram(unsigned int programId)
+{
+#if RSH_HAS_PROGRAM_BINARY
+    if (programId > 0) glDeleteProgram(programId);
+#else
+    (void)programId;
+#endif
+}
+
+uint32_t ComputeGPUId(void)
+{
+    return rshGetGPUId();
+}
+
+char* SaveLocalShader(const Shader* shader, int32_t* bufferCount)
+{
+    int binarySize = 0;
+    int written = 0;
+    unsigned int binaryFormat = 0;
+    unsigned char* binary = NULL;
+    char* output = NULL;
+    unsigned int locsBytes = 0;
+    unsigned int headerSize = 0;
+    unsigned int totalSize = 0;
+    uint32_t gpuId = 0;
+    uint32_t checksum = 2166136261u;
+    int i = 0;
+
+    if (bufferCount != NULL) *bufferCount = 0;
+    if ((shader == NULL) || (bufferCount == NULL) || (shader->id == 0)) return NULL;
+    if (!IsWindowReady()) return NULL;
+
+    if (!rshGetProgramBinaryLength(shader->id, &binarySize)) return NULL;
+
+    binary = (unsigned char*)MemAlloc((unsigned int)binarySize);
+    if (binary == NULL) return NULL;
+
+    if (!rshGetProgramBinaryData(shader->id, binary, binarySize, &binaryFormat, &written))
+    {
+        MemFree(binary);
+        return NULL;
+    }
+
+    gpuId = rshGetGPUId();
+    if (gpuId == 0)
+    {
+        MemFree(binary);
+        return NULL;
+    }
+
+    locsBytes = (unsigned int)RL_MAX_SHADER_LOCATIONS * (unsigned int)sizeof(int32_t);
+    headerSize = RSH_HEADER_BASE + locsBytes;
+
+    if ((uint32_t)written > ((uint32_t)INT32_MAX - headerSize))
+    {
+        MemFree(binary);
+        return NULL;
+    }
+
+    totalSize = headerSize + (unsigned int)written;
+    output = (char*)MemAlloc(totalSize);
+    if (output == NULL)
+    {
+        MemFree(binary);
+        return NULL;
+    }
+
+    memcpy(output, RSH_MAGIC, 4);
+    rshWriteU32(output, 4, RSH_FORMAT_VERSION);
+    rshWriteU32(output, 8, headerSize);
+    rshWriteU32(output, 12, (uint32_t)rlGetVersion());
+    rshWriteU32(output, 16, gpuId);
+    rshWriteU32(output, 20, binaryFormat);
+    rshWriteU32(output, 24, (uint32_t)RL_MAX_SHADER_LOCATIONS);
+    rshWriteU32(output, 28, (uint32_t)written);
+
+    for (i = 0; i < RL_MAX_SHADER_LOCATIONS; i++)
+    {
+        int32_t location = (shader->locs != NULL) ? (int32_t)shader->locs[i] : (int32_t)-1;
+        rshWriteU32(output, RSH_HEADER_BASE + ((unsigned int)i * 4u), (uint32_t)location);
+    }
+
+    memcpy(output + headerSize, binary, (unsigned int)written);
+
+    checksum = rshHashBytes(checksum, output + RSH_HEADER_BASE, locsBytes);
+    checksum = rshHashBytes(checksum, output + headerSize, (unsigned int)written);
+    rshWriteU32(output, 32, checksum);
+
+    *bufferCount = (int32_t)totalSize;
+
+    MemFree(binary);
+    return output;
+}
+
+
+int32_t LoadLocalShader(const char* binCode, int32_t length, Shader* loadShader)
+{
+    const char* input = binCode;
+    uint32_t version = 0;
+    uint32_t headerSize = 0;
+    uint32_t apiVersion = 0;
+    uint32_t gpuId = 0;
+    uint32_t binaryFormat = 0;
+    uint32_t locsCount = 0;
+    uint32_t binarySize = 0;
+    uint32_t checksum = 0;
+    uint32_t calculatedChecksum = 2166136261u;
+    unsigned int locsBytes = 0;
+    unsigned int program = 0;
+    int* locs = NULL;
+    int i = 0;
+
+    if ((input == NULL) || (length < (int32_t)RSH_HEADER_BASE) || (loadShader == NULL)) return 0;
+    if (!IsWindowReady()) return 0;
+
+    if (memcmp(input, RSH_MAGIC, 4) != 0) return 0;
+
+    version = rshReadU32(input, 4);
+    headerSize = rshReadU32(input, 8);
+    apiVersion = rshReadU32(input, 12);
+    gpuId = rshReadU32(input, 16);
+    binaryFormat = rshReadU32(input, 20);
+    locsCount = rshReadU32(input, 24);
+    binarySize = rshReadU32(input, 28);
+    checksum = rshReadU32(input, 32);
+
+    if (version != RSH_FORMAT_VERSION) return 0;
+    if (locsCount != (uint32_t)RL_MAX_SHADER_LOCATIONS) return 0;
+
+    locsBytes = locsCount * (unsigned int)sizeof(int32_t);
+    if (headerSize != (RSH_HEADER_BASE + locsBytes)) return 0;
+    if ((binarySize == 0) || (binaryFormat == 0)) return 0;
+
+    if (((uint64_t)headerSize + (uint64_t)binarySize) > (uint64_t)(uint32_t)length) return 0;
+
+    calculatedChecksum = rshHashBytes(calculatedChecksum, input + RSH_HEADER_BASE, locsBytes);
+    calculatedChecksum = rshHashBytes(calculatedChecksum, input + headerSize, binarySize);
+    if (calculatedChecksum != checksum) return 0;
+
+    if (apiVersion != (uint32_t)rlGetVersion()) return 0;
+    if ((rshGetGPUId() != gpuId) || (gpuId == 0)) return 0;
+
+    program = rshCreateProgramFromBinary(input + headerSize, (int)binarySize, binaryFormat);
+    if (program == 0) return 0;
+
+    locs = (int*)MemAlloc(locsBytes);
+    if (locs == NULL)
+    {
+        rshDeleteProgram(program);
+        return 0;
+    }
+
+    for (i = 0; i < RL_MAX_SHADER_LOCATIONS; i++)
+    {
+        locs[i] = (int)(int32_t)rshReadU32(input, RSH_HEADER_BASE + ((unsigned int)i * 4u));
+    }
+
+    loadShader->id = program;
+    loadShader->locs = locs;
+
+    return 1;
+}
+
+
+int32_t CanSaveLocalShader(void) {
+#if RSH_HAS_PROGRAM_BINARY
+    return (int32_t)rshIsProgramBinaryAvailable();
+#else
+    return 0;
+#endif
+    
+}
+
+#pragma endregion
+
 // Set shader uniform value
 void SetShaderValue(Shader shader, int locIndex, const void *value, int uniformType)
 {

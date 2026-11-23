@@ -85,6 +85,7 @@
 #define RAYLIB_H
 
 #include <stdarg.h>     // Required for: va_list - Only used by TraceLogCallback
+#include <stdint.h>
 
 #define RAYLIB_VERSION_MAJOR 6
 #define RAYLIB_VERSION_MINOR 1
@@ -1098,6 +1099,36 @@ RLAPI void SetShaderValueV(Shader shader, int locIndex, const void *value, int u
 RLAPI void SetShaderValueMatrix(Shader shader, int locIndex, Matrix mat);  // Set shader uniform value (matrix 4x4)
 RLAPI void SetShaderValueTexture(Shader shader, int locIndex, Texture2D texture); // Set shader uniform value and bind the texture (sampler2d)
 RLAPI void UnloadShader(Shader shader);                                    // Unload shader from GPU memory (VRAM)
+
+/**
+* 
+* 将Shader对象序列化为本机着色器二进制数据
+* @param shader 指向要序列化的Shader对象
+* @param bufferCount 返回的二进制数据的字节长度，由函数赋值
+* @return 返回一个二进制数据，表示包含shader所在对象序列化后的本机着色器数据，在相同GPU环境和硬件下可直接被LoadLocalShader快速反序列化回Shader数据；需要用MemFree释放内存
+* 返回NULL表示序列化失败，此时 bufferCount 指向的值不保证修改，返回值也不需要MemFree释放
+*/
+RLAPI char* SaveLocalShader(const Shader* shader, int32_t* bufferCount);
+
+/**
+* 快速反序列化二进制数据到着色器对象，并将着色器写入loadShader指向的位置
+* 
+* @param binCode 指向本机着色器代码的二进制数据
+* @param length 表示binCode指向的内存可用字节数量
+* @param loadShader 指向要写入Shader对象数据的位置
+* @returns 4字节整数，返回非0表示成功加载本机着色器代码，返回0表示加载失败；如果返回0则不保证loadShader被修改
+*/
+RLAPI int32_t LoadLocalShader(const char* binCode, int32_t length, Shader* loadShader);
+
+/**
+* 当前环境api允许缓存Shader对象
+* 
+* @returns 允许返回非0值，不允许返回0
+*/
+RLAPI int32_t CanSaveLocalShader(void);
+
+// 计算当前GPU、驱动、API环境的哈希指纹
+RLAPI uint32_t ComputeGPUId(void);
 
 // Screen-space-related functions
 RLAPI Ray GetScreenToWorldRay(Vector2 position, Camera camera);         // Get a ray trace from screen position (i.e mouse)
